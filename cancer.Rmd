@@ -1,0 +1,132 @@
+---
+title: "R Notebook"
+output:
+  html_document:
+    df_print: paged
+---
+
+Load all the packages we will need.
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(message = FALSE, warning = FALSE)
+```
+
+```{r}
+library(tidyverse)
+library(imager)
+library(keras)
+```
+
+
+Variables
+```{r}
+test_dir = "test"
+file_names = list.files(test_dir)
+```
+
+
+Visualize some of the images. 
+```{r}
+par(xaxt = "n", yaxt = "n", mar = c(1, 0, 1, 0), xaxs = "i", mfrow = c(3, 4))
+rand_images = list()
+for(i in 1:12) {
+  random_image = sample(file_names, 1)
+  random_image_path = file.path(test_dir, random_image)
+  random_image_data = load.image(random_image_path)
+  rand_images[[i]] = as.array(random_image_data)
+  plot(random_image_data, grid = FALSE)
+}
+```
+
+
+
+Check out the data we have
+
+```{r}
+train_labels = read_csv('train_labels.csv')
+batch_labels = train_labels %>% 
+  mutate(
+    train_filepath = paste0("train/", id, '.tif'),
+    batch_num = rep(1:325, 677)
+  )
+
+# 325
+```
+
+```{r}
+get_batch <- function(batch_labels, batch_number) {
+  filter(batch_labels, batch_num == batch_number) %>% 
+    select(train_filepath, label)
+} 
+
+batch = get_batch(batch_labels, 1)
+batch = batch_labels %>% filter(batch_num < 2) %>% 
+    select(train_filepath, label)
+```
+
+
+```{r}
+image_data <- map(
+  batch$train_filepath,
+  function(x) {
+    load.image(x) %>% 
+      as.array()
+  }
+)
+```
+
+```{r}
+image_array = array_reshape(image_data, c(nrow(batch), 96, 96, 3))
+```
+
+```{r}
+model <- keras_model_sequential() %>% 
+  layer_conv_2d(filters = 32, 
+                kernel_size = c(3, 3), 
+                activation = "relu",
+                data_format ='channels_last',
+                input_shape = c(96, 96, 3)) %>% 
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>% 
+  layer_conv_2d(filters = 64, kernel_size = c(3, 3), activation = "relu") %>%
+  layer_max_pooling_2d(pool_size = c(2, 2)) %>%
+  layer_conv_2d(filters = 64, kernel_size = c(3, 3), activation = "relu") %>%
+  layer_flatten() %>%
+  layer_dense(units = 64, activation = "relu") %>%
+  layer_dense(units = 2, activation = "softmax")
+```
+
+
+```{r, echo=TRUE, results='hide'}
+# mnist <- dataset_mnist()
+# c(c(train_images, train_labels), c(test_images, test_labels)) %<-% mnist
+
+train_images <- image_array
+train_images <- train_images / 255
+
+# test_images <- array_reshape(test_images, c(10000, 28, 28, 1))
+# test_images <- test_images / 255
+
+train_labels <- to_categorical(batch$label)
+# test_labels <- to_categorical(test_labels)
+
+model %>% compile(
+  optimizer = "rmsprop",
+  loss = "categorical_crossentropy",
+  metrics = c("accuracy")
+)
+              
+model %>% fit(
+  train_images, train_labels, 
+  epochs = 5, batch_size=64
+)
+```
+
+Let's evaluate the model on the test data:
+
+```{r, echo=TRUE, results='hide'}
+results <- model %>% evaluate(test_images, test_labels)
+```
+
+```{r}
+results
+```
