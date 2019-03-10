@@ -37,3 +37,5 @@ rsconnect/
 
 test
 train
+images
+validation_images
